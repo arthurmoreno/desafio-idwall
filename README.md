@@ -88,7 +88,7 @@ Caso a fila de reprocessamento fique muito grande devido as limitações dos par
 
 ## Classificadores
 
-De acordo com o artigo Automatic Classification of Bank Transactions disponível nesse repositório. O melhor algoritmo para realizar a classificação de transações bancarias é a regressão logística ou Logistic Regression. Esse algoritmo pode ser implementado com o auxílio da biblioteca scikit learn em Python.
+De acordo com o artigo Automatic Classification of Bank Transactions disponível nesse link (https://ntnuopen.ntnu.no/ntnu-xmlui/bitstream/handle/11250/2456871/17699_FULLTEXT.pdf?sequence=1). O melhor algoritmo para realizar a classificação de transações bancarias é a regressão logística ou Logistic Regression. Esse algoritmo pode ser implementado com o auxílio da biblioteca scikit learn em Python.
 A documentação da biblioteca oferece algumas estratégias para escalar o classificador.
 
 * https://scikit-learn.org/0.15/modules/scaling_strategies.html
