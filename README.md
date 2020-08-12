@@ -18,9 +18,9 @@ Alguns problemas de algumas dessas soluções:
     * ter que estabelecer uma nova conexão em cada requisição
 
 * WebSockets Problems
-    * Load balancer problems
+    * problemas com Load balancer
     * Proxyes and Firewalls
-    * limited number of connections
+    * numero limitado de conexões que o servidor pode fazer
     * Reinventar a roda - varias coisas que já estão prontas no protocolo HTTP precisam ser refeitas
 
 O método mais performático e que se encaixa no caso de uso da API de classificação de transações foi o Server-Sent Events (SSE). Além dele ser simples e sem grandes overheads, é possível fornecer updates enquanto o processamento está acontecendo para o cliente. Dessa forma ele terá uma melhor impressão de que a requisição ainda está sendo processada, já que várias etapas são necessárias para finalizar a análise. O protocolo do SSE também foi criado em cima do HTTP, o que ajuda em termos de compatibilidade além de já trazer implementado as vantagens do HTTP.
@@ -33,7 +33,7 @@ links de referencia de estudo:
 * https://www.youtube.com/watch?v=Z4ni7GsiIbs
 
 
-Para que a aplicação seja capaz de atender um grande número de clientes sem bloquear o servidor, as requisições serão tradas de maneira **assíncrona no servidor**. Diferentemente de utilizar apenas um WSGI HTTP Server para poder criar vários workers e conseguir responder às requisições de maneira assíncrona, a API deve ser capaz de utilizar melhor os seus recursos para conseguir responder mais clientes ao mesmo tempo. Nessa proposta. Vou utilizar nesse projeto o [AioHttp](https://docs.aiohttp.org/en/stable/), que é um framework para servidor e clientes http assíncronos. Para poder criar as conexões SSE com o Client final utilizarei [aiohttp-sse](https://github.com/aio-libs/aiohttp-sse)
+Para que a aplicação seja capaz de atender um grande número de clientes sem bloquear o servidor, as requisições serão tradas de maneira **assíncrona no servidor**. Diferentemente de utilizar apenas um WSGI HTTP Server para poder criar vários workers e conseguir responder às requisições de maneira assíncrona, a API deve ser capaz de utilizar melhor os seus recursos para conseguir responder mais clientes ao mesmo tempo. Nessa proposta vou utilizar o [AioHttp](https://docs.aiohttp.org/en/stable/), que é um framework para servidor e clientes http assíncronos. Para poder criar as conexões SSE com o Client final utilizarei [aiohttp-sse](https://github.com/aio-libs/aiohttp-sse).
 
 ### Comunicação entre microserviços
 
@@ -61,14 +61,14 @@ Para podermos obter mais informações sobre a api do parceiro, monitorar e aval
     * Consumption
     * Failure Rate
     * Status Codes
-* Eventualmente padrões irão surgir e centralizar o modo de integração e funções específicas em uma biblioteca ou API para facilitar o desenvolvimento de novas integrações.
+* Eventualmente padrões irão surgir, logo, para centralizar o modo de integração e funções específicas, uma biblioteca ou API para facilitar o desenvolvimento de novas integrações deverá ser criada.
 * Testes de integrações com os parceiros e Health Check
 
 Referência: https://blog.bearer.sh/api-integration-best-practices/
 
 ### Limitando as requisições aos parceiros
 
-* Para não ultrapassar o throughput dos parceiros semáforos distribuidos serão utilizados para garantir que o processo atual pode fazer a requisição. Caso o semáforo esteja ocupado, essa determinada requisição entrará para uma fila de processamento. Essa fila será consumida por outro processo desse microserviço responsável por fazer isso (ou por outro microserviço da integração responsável por reprocessar essas requisições)
+* Para não ultrapassar o throughput dos parceiros semáforos distribuidos serão utilizados para garantir que o processo atual pode fazer a requisição. Caso o semáforo esteja ocupado, essa determinada requisição entrará para uma fila de processamento. A requisição irá aguardar até que sua requisição ao parceiro seja feita, ou até um timeout seja atingido. Se for interessante que a requisição ainda seja processada depois que o timeout seja atingido, uma outra thread pode executar essas requisições que estouraram timeout para serem cacheadas ou simplesmente para análise (pois a requisição que fez a solicitação já teria sido fechada). No caso de um parceiro sobrecarregado, uma resposta com status code específico pode ser retornado ao serviço de CORE, para informar que o parceiro está sobrecarregado ou fora do ar.
 * Esse semáforo distribuido pode ser desenvolvido utilizando o Redis.
 - https://redislabs.com/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-3-counting-semaphores/
 - https://redis.io/topics/distlock
@@ -76,19 +76,20 @@ Referência: https://blog.bearer.sh/api-integration-best-practices/
 ### Falhas
 
 * Outras situações podem levar a uma requisição de integração ir para fila de reprocessamento, isso vai depender basicamente das regras de negócio e da prioridade desse parceiro. Mas inicialmente para simplificar esse desafio exemplo, apenas requisições que recebam timeout serão incluídas na fila de reprocessamento, ou requisições com resposta de falha (4XX / 5XX).
-* Para evitar que várias requisições falhem em um momento que o serviço do parceiro esteja fora do ar, um circuit breaker deve ser implementado. E quando o circuito estiver aberto as próximas requisições devem entrar numa fila ou serem ignoradas, dependendo da estratégia do negócio. Existem várias bibliotecas que facilitam a implementação dessa estratégia.
+* Para evitar que várias requisições falhem em um momento que o serviço do parceiro esteja fora do ar, um circuit breaker deve ser implementado. E quando o circuito estiver aberto as próximas requisições devem entrar numa fila ou serem ignoradas, dependendo da estratégia do negócio. Existem várias bibliotecas que facilitam a implementação dessa estratégia [(1)](https://pypi.org/project/circuitbreaker/).
 
 Referência: (https://blog.bearer.sh/circuit-breaker-design-pattern/)
 
 ### Consumo da fila de processamento
 
 O processo ou rotina que irá reprocessar os items da fila também deve verificar a disponibilidade do semáforo distribuido para não estourar os limites do parceiro em questão.
+Ela pode ser implementada utilizando a biblioteca [aiojobs](https://github.com/aio-libs/aiojobs) ou [celery](https://docs.celeryproject.org/en/stable/).
 
 ### Sucesso das requisições de integração
 
 Quando a resposta é obtida com sucesso do parceiro. O microserviço de integração deve enviar a resposta para o CORE para que esse dê continuidade ao processamento da requisição feita.
 
-Caso a fila de reprocessamento fique muito grande devido as limitações dos parceiros ou por muitas falhas nos seus serviços, pode-se aumentar o tamanho do Redis que estava sendo utilizado como fila, ou substituir por uma fila mais escalável como o SQS
+Caso a fila de reprocessamento fique muito grande devido as limitações dos parceiros ou por muitas falhas nos seus serviços, pode-se aumentar o tamanho do Redis que estava sendo utilizado como fila, ou substituir por uma fila mais escalável como o SQS. Porém isso iria aumentar substancialmente o tempo de espera das requisições do serviço CORE que estão aguardando.
 
 ## Classificadores
 
@@ -124,6 +125,8 @@ Biblioteca assíncrona para se comunicar com o elasticsearch:
 
 Para garantir a escalabilidade da aplicação algumas métricas devem ser observadas e analisadas para poder melhor traçar a estratégia de scaling. Que pode ocorrer também em períodos específicos que os usuários mais utilizam o serviço. Porém inicialmente um load balancer junto com o serviço de Containers da AWS (ECS) seria uma boa opção. Um Cluster Kubernetes também poderia fazer esse papel, principalmente se essa ou alguma outra solução de orquestração de containers já estiver sendo utilizada na empresa.
 
-Por possuir muitas instâncias de cada serviço em execução em um determinado momento, estratégias de [blue/green deployment](https://martinfowler.com/bliki/BlueGreenDeployment.html) e de [canary deploys](https://martinfowler.com/bliki/CanaryRelease.html) podem ser uteis para evitar grandes falhas e facilitar rollbacks das versões.
+Por possuir muitas instâncias de cada serviço em execução em um determinado momento, estratégias de [blue/green deployment](https://martinfowler.com/bliki/BlueGreenDeployment.html) e de [canary deploys](https://martinfowler.com/bliki/CanaryRelease.html) podem ser uteis para evitar grandes falhas e facilitar rollbacks das versões. Testes unitários e/ou de integração ajudariam a previnir deploys falhos.
 
 O [grafana](https://grafana.com/) seria uma boa ferramenta para visualizar várias métricas personalizadas. Com dados sendo extraídos do ElasticSearch ou do Próprio provedor Cloud.
+
+> (Disclaimer) Outras tecnologias e bibliotecas talvez façam mais sentido para cada um dos microserviços, como Java ou Golang para o microserviço CORE. Ou um serviço de integração feito basicamente com Celery. Benchmarks de POCs podem ser uma solução para escolher melhor as tecnologias apropriadas para cada situação.
